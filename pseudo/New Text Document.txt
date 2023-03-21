@@ -1,0 +1,80 @@
+units: core unit that used
+Temperature: F
+maxflow/minflow/flow: (gal/min)
+Energy rate: BTUh
+Total energy: KBTU
+
+Convert C to F:
+
+Temporary_F = entered temperature in C * 1.8 + 32
+
+Convert user entered selected flow unit to Gal/min
+Gal/h: temporary_flow(gal/min) = flow(Gal/h) / 60
+L/Min: temporary_flow(gal/min) = flow(L/Min) / 3.785412
+L/h: temporary_flow(gal/min) = flow(L/h) / 227.1247
+cubic meter/h: temporary_flow(gal/min) = flow(cubic meter/h) * 4.4028675
+
+convert energy rate from btuh to user selected:
+J/min: BTUh * 17.58426421
+kj/h: BTUh * 1.0550558526
+Gj/h: BTUh / 947817.12
+KW: BTUh / 3412.141633
+
+convert total energy = from kbtu to user selected:
+KJ = 1055.06 * kbtu
+MJ = 1.05506 * kbtu
+Gj = kbtu / 947817
+kWh = kbtu / 3.4128
+Gcal = kbtu / 3965666.83139
+
+
+Variables formula:
+Compute interval: //nominal compute interval 
+if input is pulse: Compute interval = maxflow * pulsepergallon / 60
+if input is 4-20MA or modbus register, compute interval is 1000
+
+sampleTime //actual interval
+sampleTime = float((currenttime - lasttime)) / 1000.0;
+
+loop current // 4-20ma
+Loop_Current = compare the analog value to calibrated array and use liner interpolation to get the current
+
+Supply Temp // Return Temp //
+TempF = CallendarVanDusen(R) * 9.0 / 5.0 + 32.0;
+Supply&return temp = 0.5 * (TempF + offset/100) + 0.5 * (previous read temp)
+
+Flow: if input is 4-20:
+m = (maxFlow - minFlow) / 16.0; //slope
+n = maxFlow - m * 20.0;
+Flow = m * Loop_Current + n;
+
+Flow: if input is pulse:
+Freq based on duration and pulse interupt
+Flow = (Freq + flowOffset) * 60.0 / pulsesPerGallon;
+
+BTUh:
+factor = compare the return temp or supply temp (based on location) to existing values in an existing loop up table array using liner interpolation to get the actual factor
+BTUh = (water factor or glycol factor) * Flow * (Supply_Temp - Return_Temp)
+
+kBTU:
+Delta_Energy = BTUh * SampleTime / 3600000
+kBTU += Delta_Energy
+
+Energy Pulses: (every one BTU)
+Energy_pulses += BTUh * sampleTime / 3600.0;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

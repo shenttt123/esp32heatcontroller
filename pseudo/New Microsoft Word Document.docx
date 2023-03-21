@@ -1,0 +1,142 @@
+Pseudo code for heater controller loop errors
+
+
+Every 200 ms:
+	if(sensor available): (i2c data)
+		read temperature
+	Else:
+		LoopErrCtr +=1 
+
+If (temperature on the loop < 0.1) and (heater turned on): 
+	Loop alarm 2 //Open or Short circuit on sensor
+Every 2 s:
+	interval = time passed since the last temperature changed
+	if (heater turned on at 100%) and (interval >= tmoutsec *1000):
+		Loop alarm 1 
+
+Every 16.5 s (numLoops * 220 * LoopErrCtr) (5*220*15):
+	If LoopErrCtr> sumErr:
+		temperature on the loop = 0
+		LoopErrCtr = 0
+
+	
+	
+
+
+
+
+
+
+
+
+
+Write the use cases for different mode of failures in the temp control system
+1.	Broken temp sensor
+2.	Unplug sensor
+3.	Short circuit sensor
+4.	Heater turned on and temperature going up a little bit, but not reaching desired temperature within a certain time
+a.	Heater is unplugged or broken wire at the beginning – temperature will stay fairly constant, output of pid will go to 100%
+b.	Variation on A above -Temperature rise very slowly because of surrounding temperature but will never reach target temp.  Slope will be low.
+c.	Heater working normal and temperature gets up to setpoint but the heater breaks, temperature will drop slowly and pid will eventually go to 100%
+
+
+Do not want to cause alarm on real world scenario ie. When adding material to a tank, the temperature will drop. 
+
+Temperature sensor value, pid value, setpoint, time,
+Time and pid at 100%
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Write new pseudo code for number 4:
+
+When output enabled(run once):
+	Time0 = currenttime();
+current temperature = temp[loopCtr];
+	Temperature_interval = target – current temperature
+	Heater_pluged = false
+
+If (heater turned on at 100%):
+	If (! Heater_pluged):
+	If (very long timeout interval passed):
+			Loop alarm 1
+If (temp increased by 10% of Temperature_interval): 
+				Heater_pluged = true
+				Currenttemp = temp[loopCtr]
+				Slope = (currenttemp - Temp_setpoint)/ (currenttime() - time0)
+				oldtime = curenttime
+	If (Heater_pluged):
+		New_timeout = slope/(10 % Temperature_interval)
+		If(new_timeout passed):
+			If (temp increased by 10% of Temperature_interval):
+				Slope = 
+
+		
+		
+		
+		
+	
+		
+	
+	
+
+	
+
+if (heater turned on at 100%) and (interval >= tmoutsec *1000):
+		target reached = true;
+
+			
+
+		
+
+If (heater turned on at 100%) and
+ (temp didn’t increase by 50% of (target temperature-starting temperature) within some second: 
+	Loop alarm1
+If (heater turned on at 100%) and
+ (temp didn’t increase by 25% of (target temperature-starting temperature) within some second: 
+	Loop alarm1
+If (heater turned on at 100%) and
+ (temp didn’t increase by 50% of (target temperature-starting temperature) within some second: 
+	Loop alarm1
+
+
+
+
+	temp_interval = temperature increased 
+	if (heater turned on at 100%) and (interval >= tmoutsec *1000):
+		Loop alarm 1 
+
+	if (heater turned on at 100%) and (interval >= tmoutsec *1000):
+		target reached = true;
+
+	if(
+
+	if(target reached and output enabled) 
+If (temperature  <  temperature * 90%)
+	Heater error
+
+
+
