@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	<meta charset='utf-8'>
+	<link rel="stylesheet" href="/styles.css">
+	<script src="/script.js"></script>
+  
+	<style>
+		body {
+		padding-top: 5rem;
+		}
+	</style>
+ 
+	<title>Heater Controller</title>
+</head>
+
+<body>
+<nav class="navbar navbar-expand-md navbar-dark bg-dark fixed-top">
+	<a id="prodname" class="navbar-brand text-success" href="#">Heater Controller</a>
+	<button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarsExampleDefault" aria-controls="navbarsExampleDefault" aria-expanded="false" aria-label="Toggle navigation">
+		<span class="navbar-toggler-icon"></span>
+	</button>
+	<div class="collapse navbar-collapse" id="navbarsExampleDefault">
+		<ul class="navbar-nav mr-auto">
+			<li class="nav-item">
+				<a class="nav-link" href="#" id="wifistatus"></a>
+			</li>
+		</ul>
+	</div>
+</nav>
+
+<main role="main" class="container">
+
+<nav>
+	<div class="nav nav-tabs" id="nav-tab" role="tablist">
+		<a class="nav-item nav-link active" id="nav-home-tab" data-toggle="tab" href="#nav-home" role="tab" aria-controls="nav-home" aria-selected="true">Data</a>
+		<a class="nav-item nav-link" id="nav-config-tab" data-toggle="tab" href="#nav-config" role="tab" aria-controls="nav-config" aria-selected="false">Setup</a>
+	</div>
+</nav>
+
+<div class="row row-cols-1 row-cols-sm-2 p-3">
+	<div class="col-md-12">
+		<button type="button" id="n0" ln="0" class="loopnum btn btn-outline-primary">Loop0</button>
+		<button type="button" id="n1" ln="1" class="loopnum btn btn-outline-secondary">Loop1</button>
+		<button type="button" id="n2" ln="2" class="loopnum btn btn-outline-secondary">Loop2</button>
+		<button type="button" id="n3" ln="3" class="loopnum btn btn-outline-secondary">Loop3</button>
+		<button type="button" id="n4" ln="4" class="loopnum btn btn-outline-secondary">Loop4</button>
+	</div>
+</div>
+
+<div class="tab-content" id="nav-tabContent">
+	<div class="tab-pane fade show active" id="nav-home" role="tabpanel" aria-labelledby="nav-home-tab">
+		<div class="row row-cols-1 row-cols-sm-2 p-3">
+			<div class="col-md-3">
+				<div class="card h-100 text-center">
+					<h5 class="card-header bg-success text-white">Set-Point</h5>
+					<div class="card-body">
+						<h5 id='sp' class="card-title">...</h5>
+					</div>
+				</div>
+			</div>
+			<div class="col-md-3">
+				<div class="card h-100 text-center">
+					<h5 class="card-header bg-danger text-white">PV</h5>
+					<div class="card-body">
+						<h5 id='pv' class="card-title">...</h5>
+					</div>
+				</div>
+			</div>
+			<div class="col-md-3">
+				<div class="card h-100 text-center">
+					<h5 class="card-header bg-warning text-white">Output</h5>
+					<div class="card-body">
+						<h5 id='out' class="card-title">...</h5>
+					</div>
+				</div>
+			</div>
+			<div class="col-md-3">
+				<div class="card h-100 text-center">
+					<h5 class="card-header bg-info text-white">Kp / Ki</h5>
+					<div class="card-body">
+						<h5 id='tks' class="card-title">...</h5>
+					</div>
+				</div>
+			</div>
+		</div>
+		<div class="row">
+			<div class="col-md-12">
+				<div class="card h-100 text-center">
+					<h5 class="card-header" id="graphtitle">Graph</h5>
+					<div class="card-body">
+						<div id="div_g" class="w-100 p-3" style="height:400px;"></div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+	<div class="tab-pane fade" id="nav-config" role="tabpanel" aria-labelledby="nav-profile-tab">
+		<div class="row row-cols-1 row-cols-sm-2 p-3">
+			<div class="col-md-4">
+				<div class="card h-100 text-center">
+					<h5 class="card-header">Loop Settings</h5>
+					<div class="card-body">
+						<form>
+							<div class="form-group row">
+								<label for="inputName" class="col-sm-4 col-form-label">Name</label>
+								<div class="col-sm-8">
+									<input type="text" class="form-control" id="inputName" maxlength="9">
+								</div>
+							</div>
+							<div class="form-group row">
+								<label for="inputKp" class="col-sm-4 col-form-label">Kp</label>
+								<div class="col-sm-8">
+									<input type="number" class="form-control" id="inputKp" min="0" max="1000" step="10">
+								</div>
+							</div>
+							<div class="form-group row">
+								<label for="inputKi" class="col-sm-4 col-form-label">Ki</label>
+								<div class="col-sm-8">
+									<input type="number" class="form-control" id="inputKi" min="0" max="100" step="0.1">
+								</div>
+							</div>
+							<div class="form-group row">
+								<label for="inputLow" class="col-sm-4 col-form-label">L_Alarm</label>
+								<div class="col-sm-8">
+									<input type="number" class="form-control" id="inputLow" min="40" max="300" step="1">
+								</div>
+							</div>
+							<div class="form-group row">
+								<label for="inputHigh" class="col-sm-4 col-form-label">H_Alarm</label>
+								<div class="col-sm-8">
+									<input type="number" class="form-control" id="inputHigh" min="40" max="300" step="1">
+								</div>
+							</div>
+							<div class="form-group row">
+								<div class="col-sm-12">
+									<button type="button" class="btn btn-primary" id="btn_save_loop_settings">Submit</button>
+								</div>
+							</div>
+						</form>
+					</div>
+				</div>
+			</div>
+			<div class="col-md-4">
+				<div class="card h-100 text-center">
+					<h5 class="card-header">Graph Settings</h5>
+					<div class="card-body">
+						<form>
+							<div class="form-group row">
+								<label for="inputNumSamples" class="col-sm-4 col-form-label">Samples</label>
+								<div class="col-sm-8">
+									<input type="number" class="form-control" id="inputNumSamples" min="100" max="1000" step="10">
+								</div>
+							</div>
+							<div class="form-group row">
+								<label for="inputInterval" class="col-sm-4 col-form-label">Int[sec]</label>
+								<div class="col-sm-8">
+									<input type="number" class="form-control" id="inputInterval" min="2" max="60" step="1">
+								</div>
+							</div>
+							<div class="form-group row">
+								<div class="col-sm-12">
+									<button type="button" class="btn btn-primary" id="btn_save_graph_settings">Submit</button>
+								</div>
+							</div>
+						</form>
+					</div>
+				</div>
+			</div>
+			<div class="col-md-4">
+				<div class="card h-100 text-center">
+					<h5 class="card-header">Global Settings</h5>
+					<div class="card-body">
+						<form>
+							<div class="form-group row">
+								<label for="inputFilter" class="col-sm-4 col-form-label">Noise Filter</label>
+								<div class="col-sm-8">
+									<input type="number" class="form-control" id="inputFilter" min="0" max="7" step="1">
+								</div>
+							</div>
+							<div class="form-group row">
+								<label for="inputKpT" class="col-sm-4 col-form-label">KpTuning</label>
+								<div class="col-sm-8">
+									<input type="number" class="form-control" id="inputKpT" min="0" max="1000" step="10">
+								</div>
+							</div>
+							<div class="form-group row">
+								<label for="inputOutChange" class="col-sm-4 col-form-label">Step Factor</label>
+								<div class="col-sm-8">
+									<input type="number" class="form-control" id="inputOutChange" min="0.2" max="0.9" step="0.1">
+								</div>
+							</div>
+							<div class="form-group row">
+								<label for="inputSpChange" class="col-sm-6 col-form-label">SP Change</label>
+								<div class="col-sm-2">
+									<input id="inputSpChange" type="checkbox" class="form-check-input" value="">
+								</div>
+							</div>
+							<div class="form-group row">
+								<label for="inputAT" class="col-sm-6 col-form-label">AutoTune</label>
+								<div class="col-sm-2">
+									<input id="inputAT" type="checkbox" class="form-check-input" value="">
+								</div>
+							</div>
+							<div class="form-group row">
+								<div class="col-sm-12">
+									<button type="button" class="btn btn-primary" id="btn_save_tuning_settings">Submit</button>
+								</div>
+							</div>
+						</form>
+					</div>
+				</div>
+			</div>
+		</div>
+		<div class="row">
+			<div class="alert alert-success col-sm-12" role="alert">...</div>
+		</div>
+	</div>
+</div>
+</main>
+</body>
+ 
+<script>
+var Socket;
+var data = [];
+var name = "";
+var sp = 0.0;
+var pv = 0.0;
+var out = 0.0;
+var kp = 0.0;
+var ki = 0.0;
+var ls = 0;
+var lsStrArr = ["MANUAL", "AUTO", "STABILIZING", "TUNING"];
+var lsStr = "";
+var samples = 200;
+var g;
+var loopnum = 0;
+
+var wdCtr = 0;
+var wdCtr_old = 0;
+var wdInterval = setInterval(watchDog, 12000);
+
+var interval = 10000;
+var intervalId;
+
+function init() {
+	Socket = new WebSocket('ws://' + window.location.hostname + '/ws');
+	Socket.onmessage = function(event) { processReceivedCommand(event); };
+	Socket.onerror = function (error) { alert("WS ERROR");};
+}
+
+function processReceivedCommand(evt) 
+{
+	showActivity();
+	wdCtr = wdCtr + 1;
+	
+	console.log(evt.data);
+	if (evt.data.includes("data:")) {
+		var dataStr = evt.data;
+		var dataArr = dataStr.split(",");
+
+		sp = dataArr[1];
+		pv = dataArr[2];
+		out = dataArr[3];
+		kp = dataArr[4];
+		ki = dataArr[5];
+		ls = parseInt(dataArr[6]);
+		lsStr = lsStrArr[ls];
+		var cycle = dataArr[7];
+		var cycleStr = "";
+		if (ls == 3) {
+			cycleStr = " - Step " + cycle + "/4";
+		}
+	
+		$("#sp").html(sp + " °F");
+		$("#pv").html(pv + " °F");
+		if (out == "OFF") {$("#out").html(out);} else {$("#out").html(out + " %");}
+		$("#tks").html(kp + " / " + ki);
+		$("#prodname").html("Heater Controller -  " + name + "  -  Mode: " + lsStr + cycleStr);
+		$('.alert').html(" ");
+	}
+	else if (evt.data.includes("init:")) {
+		var dataStr = evt.data;
+		var dataArr = dataStr.split(",");
+
+		name = dataArr[1];
+		var kpInit = dataArr[2];
+		var kiInit = dataArr[3];
+		var filter = dataArr[4];
+		var kpT = dataArr[5];
+		var deltaOut = dataArr[6];
+		var spchange = dataArr[7];
+		var atune = dataArr[8];
+	
+		$("#inputName").val(name);
+		$("#inputKp").val(kpInit);
+		$("#inputKi").val(kiInit);
+		$("#inputFilter").val(filter);
+		$("#inputKpT").val(kpT);
+		$("#inputOutChange").val(deltaOut);
+		if (spchange == "1") {
+			$("#inputSpChange").prop("checked", true);
+		}
+		else {
+			$("#inputSpChange").prop("checked", false);
+		}
+		if (atune == "1") {
+			$("#inputAT").prop("checked", true);
+		}
+		else {
+			$("#inputAT").prop("checked", false);
+		}
+	}
+	else if (evt.data.includes("labels:")) {
+		var labelStr = evt.data;
+		var labelArr = labelStr.split(",");
+		$("#n0").html(labelArr[1]);
+		$("#n1").html(labelArr[2]);
+		$("#n2").html(labelArr[3]);
+		$("#n3").html(labelArr[4]);
+		$("#n4").html(labelArr[5]);
+		var numLoops = parseInt(labelArr[6]);
+		for (var i = 0; i < 5; i++) {
+			if (i >= numLoops) {
+				$("#n" + i).hide();
+			}
+		}
+	}
+	else if (evt.data.includes("alarms:")) {
+		var alarmStr = evt.data;
+		var alarmArr = alarmStr.split(",");
+		$("#inputLow").val(alarmArr[1]);
+		$("#inputHigh").val(alarmArr[2]);
+	}
+	else if (evt.data.includes("ssid:")) {
+		$('#inputSSID').val(evt.data.substr(5));
+	}
+	else if (evt.data.includes("pw:")) {
+		$('#inputwifipw').val(evt.data.substr(3));
+	}
+	else if (evt.data.includes("saved:")) {
+		$('.alert').html("Data Saved");
+	}
+}
+
+function SaveLoopSettingsButtonClicked() {
+	var nameLoop = $('#inputName').val();
+	sendText('name:' + nameLoop);
+	var kpLoop = $('#inputKp').val();
+	sendText('kp:' + kpLoop);
+	var kiLoop = $('#inputKi').val();
+	sendText('ki:' + kiLoop);
+	$("#n" + loopnum).html(nameLoop);
+	var lowAlarm = $('#inputLow').val();
+	sendText('lowal:' + lowAlarm);
+	var highAlarm = $('#inputHigh').val();
+	sendText('highal:' + highAlarm);
+}
+
+function SaveTuningSettingsButtonClicked() {
+	var filter = $('#inputFilter').val();
+	sendText('filter:' + filter);
+	var kpT = $('#inputKpT').val();
+	sendText('kpt:' + kpT);
+	var deltaOut = $('#inputOutChange').val();
+	sendText('out%:' + deltaOut);
+	var spflag = $('#inputSpChange').prop("checked");
+	if (spflag == true) {
+		sendText('spchange:1');
+	}
+	else {
+		sendText('spchange:0');
+	}
+	var atflag = $('#inputAT').prop("checked");
+	if (atflag == true) {
+		sendText('atune:1');
+	}
+	else {
+		sendText('atune:0');
+	}
+}
+
+function SaveGraphSettingsButtonClicked() {
+	samples = parseInt($('#inputNumSamples').val());
+	localStorage.setItem('samples', $('#inputNumSamples').val());
+	interval = parseInt($('#inputInterval').val()) * 1000;
+	localStorage.setItem('interval', ($('#inputInterval').val()) * 1000);
+	updateWindowSize();
+	clearInterval(intervalId);
+	startInterval(interval);
+	$('.alert').html("Data Saved");
+}
+
+$(".loopnum").click(function(){
+	loopnum = $(this).attr("ln");
+	sendText('ln:' + loopnum);
+	$(".loopnum").removeClass("btn-outline-primary");
+	$(".loopnum").addClass("btn-outline-secondary");
+	$(this).removeClass("btn-outline-secondary");
+	$(this).addClass("btn-outline-primary");
+	data.splice(0, data.length);
+});
+
+function sendText(data) {
+	Socket.send(data);
+}
+
+function showActivity() {
+	$("#prodname").toggleClass("text-success");
+}
+
+function watchDog() {
+	if (wdCtr == wdCtr_old) {
+		$("#wifistatus").html(" - NOT CONNECTED -");
+		alert("Lost Connection ! \n Please re-connect and refresh Browser !");
+		clearInterval(wdInterval);
+	}
+	else {
+		$("#wifistatus").html(" - CONNECTED -");
+	}
+	wdCtr_old = wdCtr;
+}
+
+function startInterval(_interval) {
+	intervalId = setInterval(function() {
+		if (out == "OFF") {
+			data.push([new Date(), parseFloat(sp), parseFloat(pv), 0.0]);
+		}
+		else {
+		 data.push([new Date(), parseFloat(sp), parseFloat(pv), parseFloat(out)]);
+		}
+		if (data.length > samples) {data.shift();}
+		if (data.length > 0) {g.updateOptions( { 'file': data } );}
+	}, _interval);
+}
+
+function updateWindowSize() {
+	var wind = samples * interval/60000;
+	wind = wind.toFixed(1);
+	$('#graphtitle').text("Time Window: " + wind.toString() + " Min");
+}
+
+ $(document).ready(function() {
+	init();
+	if (out == "OFF") {
+		data.push([new Date(), parseFloat(sp), parseFloat(pv), 0.0]);
+	}
+	else {
+		data.push([new Date(), parseFloat(sp), parseFloat(pv), parseFloat(out)]);
+	}
+	document.getElementById('btn_save_graph_settings').addEventListener('click', SaveGraphSettingsButtonClicked);
+	document.getElementById('btn_save_tuning_settings').addEventListener('click', SaveTuningSettingsButtonClicked);
+	document.getElementById('btn_save_loop_settings').addEventListener('click', SaveLoopSettingsButtonClicked);
+	
+	if (localStorage.getItem('interval')) {
+		interval = parseInt(localStorage.getItem('interval'));
+	}
+	if (localStorage.getItem('samples')) {
+		samples = parseInt(localStorage.getItem('samples'));
+	}
+	
+	$('#inputNumSamples').val(samples);
+	$('#inputInterval').val(interval/1000);
+	updateWindowSize();
+	
+	g = new Dygraph(document.getElementById("div_g"), data,
+		{
+		drawPoints: true,
+		showRoller: true,
+		labels: ['Time', 'SP', 'PV', 'OUT'],
+		colors: ['green', 'red', 'orange']
+		});
+	clearInterval(intervalId);
+	startInterval(interval);
+    }
+);
+</script>
+
+</html>

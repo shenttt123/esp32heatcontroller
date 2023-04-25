@@ -1,4 +1,3 @@
-f
 /*
 
   Reads thermocouple temperatures from MCP9600 sensors.
@@ -33,8 +32,9 @@ f
   04/20/2022: Put PID to manual mode in autotune stabalizing step.
   04/20/2022: Default output to OFF after startup. Add delay after ENTER button touch.
   05/10/2022: Change LoopError algorithm.
-  11/02/2022: Make concecutice Loor Errors a variable on SD card.
+  11/02/2022: Make consecutice Loor Errors a variable on SD card.
   11/09/2022: Increase sensor read intervall from 150 msec to 200 msec
+  03/15/2023: Add ability to reset Errors by turning loop OFF -> ON
 */
 
 // Network Libraries
@@ -57,7 +57,7 @@ PCA9536 io;
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
 
-#define DEBUG 0                // Set to "1" to enable Serial.print
+#define DEBUG 0            // Set to "1" to enable Serial.print
 
 String APname = "";
 const char* password = "ashbycrosshc";
@@ -101,6 +101,10 @@ double Input[] = {60.0, 60.0, 60.0, 60.0, 60.0};
 double Output[] = {0.0, 0.0, 0.0, 0.0, 0.0};
 double Kp[] = {50.0, 50.0, 50.0, 50.0, 50.0};
 double Ki[] = {0.0, 0.0, 0.0, 0.0, 0.0};
+
+double Kp_old[] = {50.0, 50.0, 50.0, 50.0, 50.0};
+double Ki_old[] = {0.0, 0.0, 0.0, 0.0, 0.0};
+
 float outPercent[] = {0.0, 0.0, 0.0, 0.0, 0.0};
 double lowAlarm[] = {0.0, 0.0, 0.0, 0.0, 0.0};
 double highAlarm[] = {0.0, 0.0, 0.0, 0.0, 0.0};
@@ -110,6 +114,21 @@ int LoopErrCtr[] = {0, 0, 0, 0 ,0};
 //int LoopErrCtr_Old[] = {0, 0, 0, 0 ,0};
 int tmoutsec = 300;
 int sumErr = 10;
+
+//double Output_Max = 0.0;
+//double outputDown = 0.0;
+
+float temp1=0.0;
+float temp2=0.0;
+unsigned long temp3=0;
+unsigned long temp4=0;
+
+double temp5 = 0.0;
+bool temp6 = false;
+bool temp7 = false;
+bool temp8 = false;
+bool temp9 = false;
+byte isthealgriml = 0;
 
 unsigned long time_equal[] = {0, 0, 0, 0 ,0};
 unsigned long time_unequal[] = {0, 0, 0, 0 ,0};
@@ -121,19 +140,26 @@ double deltaOut = 0.6;
 bool tune[] = {false, false, false, false, false};
 bool tune_old[] = {false, false, false, false, false};
 bool atInit[] = {false, false, false, false, false};
+bool atInit_2[] = {false, false, false, false, false};
 int cycle = 0;
 int loopNum = 0;
 double AT_Kp = 0.0;
 double AT_Ki = 0.0;
 
 bool save_loop_data = false;
-bool save_tuning_data = false;
+bool save_tuning_data = false;  
+// 0=Auto; 1=manual; 2=Stabalizing; 3=AutoTune
 int loopStatus[] = {0, 0, 0, 0, 0}; // 0=OFF; 1=AUTO; 2=Stabalizing; 3=AutoTune
+
 float ambientTemp[] = {50.0, 50.0, 50.0, 50.0, 50.0};
 int loopCtr = 0;
 int OKloopCtr = 0;
 
+bool stable[] = {false, false, false, false, false};
+boolean autoturnedonflag[] = {false,false,false,false,false};
 bool outputEnable[] = {false, false, false, false, false};
+float slope[] = {0.0, 0.0, 0.0, 0.0, 0.0};
+
 
 // Create array of PID objects
 PID pidLoop[] = {
@@ -157,30 +183,20 @@ String targetStr[] = {"", "", "", "", ""};
 String loopLabel[] = {"Loop 0", "Loop 1", "Loop 2", "Loop 3", "Loop 4"};
 String Title1 = "";
 String Title2 = "";
+String AutotuneMessage = "";
+String AutotuneMessage1 = "";
+String AutotuneMessage2 = "";
 String AlarmText = "";
 String LoopAlarmText = "";
 String StatusStr1 = "";
 String StatusStr2 = "";
 String spEnableStr = "1";
 String atEnableStr = "1";
-boolean autoturnedonflag[] = {false,false,false,false,false};
-boolean waitcooldownflag[] = {false,false,false,false,false};
 boolean AlarmBlink = false;
-
 boolean ws_connected = false;
 
 int loopNumber = 0;
 int AT_loopNum = 0;
-//######new variables for loop alarm algrim######//
-  unsigned long oldTime[5]= {0, 0, 0, 0 ,0};
-  float oldTemp[5] = {0, 0, 0, 0 ,0};
-  float Temperature_diff[5] ={0, 0, 0, 0 ,0};
-  bool Heater_plugged[5] = {false,false,false,false,false};
-  bool target_reached[5] = {false,false,false,false,false};
-  int fail_counter[5] = {0, 0, 0, 0 ,0};
-  unsigned long New_timeout[5] = {0, 0, 0, 0 ,0};
-  double Slope[5] ={0, 0, 0, 0 ,0};
-//######new variables for loop alarm algrim######//
 
 // Keypad
 #define BTN_WIDTH 80
@@ -203,6 +219,8 @@ int AT_loopNum = 0;
 //This is the I2C Address of the MCP4725 DAC, by default (A0 pin on chip pulled to GND).
 #define MCP4725_ADDR 0x60
 
+#define Default_kp 50.0
+#define Default_ki 1.0
 
 void setup() {
 
@@ -257,11 +275,11 @@ void setup() {
     if (tempSensor[j].isConnected()) {
       if (DEBUG == 1) {Serial.print("Sensor "); Serial.print(j); Serial.println( " OK!");}
 	      tempSensor[j].resetToDefaults();
-		    delay(10);
-        tempSensor[j].setAmbientResolution(ambientRes);
-		    delay(10);
-        tempSensor[j].setThermocoupleResolution(thermocoupleRes);
-        sensor_online[j] = true;
+		  delay(10);
+          tempSensor[j].setAmbientResolution(ambientRes);
+		  delay(10);
+          tempSensor[j].setThermocoupleResolution(thermocoupleRes);
+          sensor_online[j] = true;
     }
     // Configure PID
     Input[j] = Setpoint[j];
@@ -282,7 +300,7 @@ void setup() {
     pidLoop[i].SetMode(AUTOMATIC);
     pidLoop[i].SetSampleTime(1000);
     pidLoop[i].SetTunings(Kp[i], Ki[i], 0.0);
-    loopStatus[i] = 1;
+    loopStatus[i] = 0;
   }
 
   pinMode(LOOP0_OUT_PIN, OUTPUT);
@@ -320,14 +338,14 @@ void loop() {
               temp[loopCtr] = temp[loopCtr] + tempOffset[loopCtr];
 			        //float filterFactor = 1.0 - (float(coefficient) / 10.0);
               //temp[loopCtr] = filterFactor * temp[loopCtr] + (1.0 - filterFactor) * temp_prev[loopCtr];
-      			  //temp_prev[loopCtr] = temp[loopCtr];
-      			  OKloopCtr = loopCtr;
+			        //temp_prev[loopCtr] = temp[loopCtr];
+			        OKloopCtr = loopCtr;
           }
           else {
               //temp[loopCtr] = 0.0; // add counter array, increment counter[], if counter[] > 10, set temp[] to zero and reset counter
               LoopErrCtr[loopCtr] = LoopErrCtr[loopCtr] + 1;
           }
-          Input[loopCtr] = temp[loopCtr];
+              Input[loopCtr] = temp[loopCtr];
 
           // Detect Temperature Alarms
           if ((temp[loopCtr] >= highAlarm[loopCtr]) && (highAlarm[loopCtr] > 0.5)) {
@@ -342,7 +360,7 @@ void loop() {
 
           if (temp[loopCtr] < 0.1 && outputEnable[loopCtr]) {
               LoopError[loopCtr] = 2;
-              LoopAlarmText = "LOOP ALARM"; //Loop alarm 2
+              LoopAlarmText = "LOOP ALARM";
           }
       }
       loopCtr = loopCtr + 1;
@@ -356,6 +374,29 @@ void loop() {
           }
       }
   }
+  // Check if thermocouple short circuit or heater not connected when output enabled
+  if (delayed_runEvery(2000)) {
+      for (int i = 0; i < numLoops; i++) {
+          int tempInt = int(temp[i] * 10.0);
+          int tempInt_old = int(temp_old[i] * 10.0);
+          if (tempInt != tempInt_old) {
+              time_unequal[i] = millis();
+          }
+          else {
+              time_equal[i] = millis();
+          }
+          if (outPercent[i] > 99.9 && outputEnable[i] && time_equal[i] > time_unequal[i] && temp[i] > 0.0) {
+              unsigned long time_delta = time_equal[i] - time_unequal[i];
+              if (time_delta >= tmoutsec * 1000UL) {
+                  LoopError[i] = 1;
+                  LoopAlarmText = "LOOP ALARM";
+                  if (DEBUG == 1) {Serial.print("LoopAlarm "); Serial.println(i);}
+              }
+          }
+          temp_old[i] = temp[i];
+     }
+  }
+
   // Send data to browser (ws)
   if (runEvery_2(2000) && ws_connected) {
       // SP
@@ -387,95 +428,28 @@ void loop() {
     for (int i = 0; i < numLoops; i++) {
         if (outputEnable[i] && sensor_online[i] && (LoopError[i] > 0 || AlarmStatus[i] > 0)) {buzzer = 1000;} // 0..20 mA --> Turn Buzzer ON
     }
-	  CurrentLoop(buzzer);
+	CurrentLoop(buzzer);
   }
 
   // Check if Thermocouple Error Count exceeds limit
   if (runEvery_4(numLoops * 220 * sumErr)) {
     for (int i = 0; i < numLoops; i++) {
-       if (LoopErrCtr[i] >= sumErr) temp[i] = 0.0;//if temp is 0, assume there's a error on the sensor
+       if (LoopErrCtr[i] >= sumErr) temp[i] = 0.0;
        LoopErrCtr[i] = 0;
 	  }
   }
-  
-/************************************************
-   Check if thermocouple short circuit or heater not connected when output enabled
- ************************************************/
-  if (runEvery_5(2000)) {
-      unsigned long currenttime = millis();
-      for (int i = 0; i < numLoops; i++) {
-        if(outputEnable[i] && (!tune[i])) {
-          if (!target_reached[i]){
-            if(!Heater_plugged[i]){
-              if(temp[i] > oldTemp[i] + 0.1 * Temperature_diff[i] | temp[i] > oldTemp[i] + 5){
-                Heater_plugged[i] = true;
-                Slope[i] = (temp[i]-oldTemp[i])*1000.0 /(currenttime - oldTime[i]);
-                New_timeout[i] = (0.1 * Temperature_diff[i])*1000.0 / Slope[i];
-                
-                if(New_timeout[i] > tmoutsec){
-                    New_timeout[i] = tmoutsec;
-                    if(New_timeout[i] < 12){
-                      New_timeout[i] = 12;
-                    }
-                }
-                oldTemp[i] = temp[i];
-                oldTime[i] = currenttime;
-              }
-              else if (currenttime - oldTime[i] > tmoutsec * 1000UL){//5 min
-                LoopError[i] = 1;
-                LoopAlarmText = "newALARM a";
-              }
-            }
-            else if(Heater_plugged[i]){
-                if ((Setpoint[i] - oldTemp[i]) < 1) target_reached[i] = true;
-                if (temp[i] > oldTemp[i] + 0.1 * Temperature_diff[i]){
-                  Slope[i] = ((temp[i]-oldTemp[i])*1000.0) / (currenttime -oldTime[i]);
-                  New_timeout[i] = (0.1 * Temperature_diff[i] * 1000.0) /Slope[i]; //time in second that it takes to reach next 10 percent
-                  
-                  if(New_timeout[i] > tmoutsec){
-                    New_timeout[i] = tmoutsec;
-                    if(New_timeout[i] < 12){
-                      New_timeout[i] = 12;
-                    }
-                  }
-                  oldTemp[i] = temp[i];
-                  oldTime[i] = currenttime;
-                  fail_counter[i] = 0;
-                }
-                if(currenttime - oldTime[i] > New_timeout[i]){
-                  oldTime[i] = currenttime;
-                  fail_counter[i]+=1;
-                  if(fail_counter[i] > 25){
-                    LoopError[i] = 1;
-                    LoopAlarmText = "newALARM b";
-                    fail_counter[i]=0;
-                  }
-                }
-            }
-          }
-          if(target_reached[i]){//heater unpluged after reach target temp
-              if(Temperature_diff[i] * 0.1 < 5){
-                if(temp[i] < Setpoint[i] - 5){
-                    LoopError[i] = 1;
-                    LoopAlarmText = "newALARM c";
-                }
-              }
-              else if(temp[i] < Setpoint[i] - 0.1 * Temperature_diff[i]){//decreased by 10 %
-                    LoopError[i] = 1;
-                    LoopAlarmText = "newALARM c";
-              }
-          }
-        }
-     }
-  }
+
   /************************************************
      turn the output pin on/off based on pid output
    ************************************************/
   for (int i = 0; i < numLoops; i++){
     if (sensor_online[i]) {
         pidLoop[i].Compute();
-        if (tune[i]) {
-            autotune(AT_loopNum);
+        if (tune[i] && stable[i] && runEvery_6(1000)) {
+           if(i == AT_loopNum) autotune(AT_loopNum);
+        }
+        else if(tune[i] && !stable[i] && runEvery_5(5000)){
+           if(i == AT_loopNum) check_stability(AT_loopNum);
         }
     }
   }
@@ -504,9 +478,8 @@ void loop() {
     if(!tune[i] && !outputEnable[i]) outPercent[i] = 0;
   }
 
-
   CleO.Start();
-  //if (overviewDisplay) {//why commented out?
+  //if (overviewDisplay) {
     display();
   //}
   if (keypadDisplay) {
@@ -542,6 +515,17 @@ boolean runEvery_0(unsigned long interval) {
   if (currentMillis - previousMillis_0 >= interval)
   {
     previousMillis_0 = currentMillis;
+    return true;
+  }
+  return false;
+}
+
+boolean delayed_runEvery(unsigned long interval) {
+  static unsigned long previousMillis_1 = millis();
+  unsigned long currentMillis = millis();
+  if (currentMillis - previousMillis_1 >= interval)
+  {
+    previousMillis_1 = currentMillis;
     return true;
   }
   return false;
@@ -586,6 +570,17 @@ boolean runEvery_5(unsigned long interval) {
   if (currentMillis - previousMillis_5 >= interval)
   {
     previousMillis_5 = currentMillis;
+    return true;
+  }
+  return false;
+}
+
+boolean runEvery_6(unsigned long interval) {
+  static unsigned long previousMillis_6 = 0;
+  unsigned long currentMillis = millis();
+  if (currentMillis - previousMillis_6 >= interval)
+  {
+    previousMillis_6 = currentMillis;
     return true;
   }
   return false;
@@ -637,7 +632,7 @@ void display() {
     
     // Draw Title Headers
   	Title1 = "Heater Controller";
-	  Title2 = "PID Loop Overview";
+  	Title2 = "PID Loop Overview";
     Title1.toCharArray(buf, 60);
     CleO.StringExt(FONT_SANS_4, 98, 0, LIGHT_BLUE, TL, 0, 0, buf);
     Title2.toCharArray(buf, 60);
@@ -760,16 +755,16 @@ void displayKeypad() {
     CleO.eve_button(370, 15, 110, BTN_HEIGHT, FONT_MEDIUM, OPT_FLAT, ">");
     // Draw output ON/OFF button
     if (outputEnable[loopNum]) {
-	    CleO.eve_fgcolor(LIGHT_GREEN);
+	      CleO.eve_fgcolor(LIGHT_GREEN);
         CleO.Tag(15);
         CleO.eve_button(370, 170, 110, BTN_HEIGHT, FONT_MEDIUM, OPT_FLAT, "ON");
     }
     else {
 	    CleO.eve_fgcolor(ORANGE);
-      CleO.Tag(15);
-      CleO.eve_button(370, 170, 110, BTN_HEIGHT, FONT_MEDIUM, OPT_FLAT, "OFF");
+        CleO.Tag(15);
+        CleO.eve_button(370, 170, 110, BTN_HEIGHT, FONT_MEDIUM, OPT_FLAT, "OFF");
     }
-	CleO.StringExt(FONT_SANS_4, 335, 130, WHITE, TL, 0, 0, "Output is:");
+	  CleO.StringExt(FONT_SANS_4, 335, 130, WHITE, TL, 0, 0, "Output is:");
     isKeypadDisplay = true;
     CleO.Tag(99);
 }
@@ -795,32 +790,67 @@ void displayAtDialog() {
     CleO.RectangleXY(0, 78, 479, 202);
 
     Title1 = String(loopLabel[AT_loopNum]) + " - AutoTune";
-
+    AutotuneMessage2 = "Stable index is: " + String(isthealgriml);
     // Draw Title Headers
     if (!tune[AT_loopNum] && cycle == 0) {
         Title2 = "Wait for stable PV";
+        AutotuneMessage = "Make Sure SP is set to normal operating temp";
     }
     else {
         if (cycle < 4) {Title2 = "Tuning - Step " + String(cycle) + "/4";}
 		    else {Title2 = "Tuning - Finished";}
+        if(stable[AT_loopNum] == false){
+          Title2 = "Waiting for stable PV";
+          AutotuneMessage = "Current default Tuning value: Kp = " + String(pidLoop[AT_loopNum].GetKp()) + "   Ki = " + String(pidLoop[AT_loopNum].GetKi(),2);
+          //AutotuneMessage1 = "Slope:[" + String(slope[0],3) + " " + String(slope[1],3) + " " + String(slope[2],3) + " " + String(slope[3],3) + "]";
+          //AutotuneMessage1 = "Detail:[" + String(temp1,3) + " " + String(temp2) + "   " + String(temp3) + " " + String(temp4) + "]";
+          //AutotuneMessage2 = "Output_Max% 4stable:[" + String(temp5,3) + " " + String(temp6) + " " + String(temp7) + " " + String(temp8) + " " + String(temp9) + "]";
+        }else{
+          loopStatus[AT_loopNum] = 3;
+          AutotuneMessage = "PV is stable, Autotuning";
+          if(cycle == 4){
+            AutotuneMessage = "";
+            autoturnedonflag[AT_loopNum] = false;
+          }
+        }
     }
     Title1.toCharArray(buf, 60);
     CleO.StringExt(FONT_SANS_4, 98, 0, LIGHT_BLUE, TL, 0, 0, buf);
     Title2.toCharArray(buf, 60);
     CleO.StringExt(FONT_SANS_4, 98, 35, LIGHT_BLUE, TL, 0, 0, buf);
 
-
     //atText = loopLabel[AT_loopNum] + "  -  Autotune: Cycle " + String(cycle) + "/4";
     //atText.toCharArray(buf, 60);
     //CleO.StringExt(FONT_SANS_2, 20, 90, LIGHTGREY, TL, 0, 0, buf);
 
-    atText = "SP = " + String(int(round(Setpoint[AT_loopNum]))) + "  PV = " + String(temp[AT_loopNum]) + "  Out% = " + String(outPercent[AT_loopNum]);
+    atText = "SP = " + String(int(round(Setpoint[AT_loopNum]))) + "  PV = " + String(temp[AT_loopNum]) + "  Out% = " + String(outPercent[AT_loopNum],1); 
     atText.toCharArray(buf, 60);
-    CleO.StringExt(FONT_SANS_3, 20, 85, LIGHTGREY, TL, 0, 0, buf);
-
-    atText = "Old: Kp = " + String(Kp[AT_loopNum]) + "   Ki = " + String(Ki[AT_loopNum]);
+    CleO.StringExt(FONT_SANS_3, 20, 85, LIGHTGREY, TL, 0, 0, buf);   
+    
+    if(tune[AT_loopNum] | cycle == 4){
+      atText = "Old: Kp = " + String(Kp_old[AT_loopNum]) + "   Ki = " + String(Ki_old[AT_loopNum]);
+    } else {
+      atText = "Old: Kp = " + String(Kp[AT_loopNum]) + "   Ki = " + String(Ki[AT_loopNum]);
+    }
+    
     atText.toCharArray(buf, 60);
     CleO.StringExt(FONT_SANS_3, 20, 110, LIGHTGREY, TL, 0, 0, buf);
+    
+    AutotuneMessage.toCharArray(buf, 60);
+    CleO.StringExt(FONT_SANS_2, screenWidth/2, 150, LIGHTBLUE, MM, 0, 0, buf);
+
+    AutotuneMessage1.toCharArray(buf, 60);
+    CleO.StringExt(FONT_SANS_2, screenWidth/2, 210, LIGHTBLUE, MM, 0, 0, buf);
+
+    AutotuneMessage2.toCharArray(buf, 60);
+    CleO.StringExt(FONT_SANS_2, 360, 240, LIGHTBLUE, MM, 0, 0, buf);
+
+    if(autoturnedonflag[AT_loopNum]){
+        outputEnable[AT_loopNum] = true;
+        atText = "Output automatically turned on";
+        atText.toCharArray(buf, 60);
+        CleO.StringExt(FONT_SANS_3, screenWidth/2, 180, GREEN, MM, 0, 0, buf);  
+    }
     if (cycle == 4) {
         atText = "New: Kp = " + String(AT_Kp) + "   Ki = " + String(AT_Ki);
         atText.toCharArray(buf, 60);
@@ -828,43 +858,25 @@ void displayAtDialog() {
     }
 
     // Button Color
-    CleO.StringExt(FONT_SANS_2, 0, 150, BLACK, TL, 0, 0, "");
     CleO.eve_fgcolor(YELLOW);
-    
     // Start Button
     if (!tune[AT_loopNum]) {
-      if(temp[AT_loopNum] > 0.1){
-       CleO.Tag(50);
-       CleO.eve_button(20, 165, BTN_WIDTH + 25, BTN_HEIGHT, FONT_MEDIUM, OPT_FLAT, "Start");
-      }
-      if(temp[loopNum] + 5 < Setpoint[loopNum]){
-        waitcooldownflag[AT_loopNum] = false;
+      if(temp[AT_loopNum] < Setpoint[AT_loopNum] - 5){
+        CleO.Tag(50);
+        CleO.StringExt(FONT_SANS_2, 0, 150, BLACK, TL, 0, 0, "");
+        CleO.eve_button(20, 165, BTN_WIDTH + 25, BTN_HEIGHT, FONT_MEDIUM, OPT_FLAT, "Start");
       }else{
-        waitcooldownflag[AT_loopNum] = true;
-      }
-       if(waitcooldownflag[AT_loopNum]){
-          String SText = "Temp too high, retry after PV < SP-5";
-          SText.toCharArray(buf, 60);
-          CleO.StringExt(FONT_SANS_2, screenWidth/2, 150, RED, MM, 0, 0, buf);
-          outputEnable[AT_loopNum] = false;
-       }else{
-         String SText = "Make Sure SP is set to normal operating temp";
-         SText.toCharArray(buf, 60);
-         CleO.StringExt(FONT_SANS_2, screenWidth/2, 150, LIGHTBLUE, MM, 0, 0, buf);
-         outputEnable[AT_loopNum] = false;
-      }
-    }else{
-       if(autoturnedonflag[AT_loopNum]){
-          outputEnable[AT_loopNum] = true;
-          String SText = "Output automatically turned on";
-          SText.toCharArray(buf, 60);
-          CleO.StringExt(FONT_SANS_3, screenWidth/2, 150, GREEN, MM, 0, 0, buf);
+        if(cycle == 0){
+          atText = "Wait for cooldown until PV < SP - 5";
+          atText.toCharArray(buf, 60);
+          CleO.StringExt(FONT_SANS_3, screenWidth/2, 180, RED, MM, 0, 0, buf);
+        }
       }
     }
-    
     // Cancel Button
-    CleO.StringExt(FONT_SANS_2, 0, 150, BLACK, TL, 0, 0, "");
+    
     CleO.Tag(51);
+    CleO.StringExt(FONT_SANS_2, 0, 150, BLACK, TL, 0, 0, "");
     CleO.eve_button(20, 230, BTN_WIDTH + 25, BTN_HEIGHT, FONT_MEDIUM, OPT_FLAT, "Cancel");
     // Save Button
     if (cycle == 4) {
@@ -901,62 +913,65 @@ void control()
             keypadDisplay = false;
             overviewDisplay = false;
             //pidLoop[AT_loopNum].SetTunings(KpTuning, 0.0, 0.0);
-			      pidLoop[AT_loopNum].SetMode(MANUAL);  // Disable PID
+			      //pidLoop[AT_loopNum].SetMode(MANUAL);  // Disable PID//?
+            pidLoop[AT_loopNum].SetMode(AUTOMATIC);
             cycle = 0;
-            loopStatus[AT_loopNum] = 2;
         }
     }
-     if(isAtDisplay) {
+    if (isAtDisplay) {
         // Start Autotune
         if (tag == 50) {
-          tune[AT_loopNum] = true;
-          atInit[AT_loopNum] = true;
-          loopStatus[AT_loopNum] = 3;
-          pidLoop[AT_loopNum].SetMode(MANUAL);
-          
-          if(!outputEnable[AT_loopNum]){
-            autoturnedonflag[AT_loopNum] = true;
-           }
-          if(temp[loopNum] + 5 > Setpoint[loopNum]){
-            waitcooldownflag[AT_loopNum] = true;
-            tune[AT_loopNum] = false;
-            atInit[AT_loopNum] = false;
-            loopStatus[AT_loopNum] = 1;
-            pidLoop[AT_loopNum].SetTunings(Kp[AT_loopNum], Ki[AT_loopNum], 0.0);
+            Kp_old[AT_loopNum] = Kp[AT_loopNum];
+            Ki_old[AT_loopNum] = Ki[AT_loopNum];
+            tune[AT_loopNum] = true;
+            atInit[AT_loopNum] = true;
+            atInit_2[AT_loopNum] = true;
+            loopStatus[AT_loopNum] = 2;
+            //pidLoop[AT_loopNum].SetMode(MANUAL);
+            if(!outputEnable[AT_loopNum]){
+              autoturnedonflag[AT_loopNum] = true;
+            }
+            //pidLoop[AT_loopNum].SetTunings(Kp[AT_loopNum], Ki[AT_loopNum], 0.0);
+            pidLoop[AT_loopNum].SetTunings(Default_kp, Default_ki, 0.0);
             pidLoop[AT_loopNum].SetMode(AUTOMATIC);
-          }else{
-            waitcooldownflag[AT_loopNum] = false;
-          }
         }
         // Cancel Autotune
         if (tag == 51) {
-            autoturnedonflag[AT_loopNum] = false;
-            waitcooldownflag[AT_loopNum] = false;
-            //outputEnable[AT_loopNum] = false;
-            pidLoop[AT_loopNum].SetTunings(Kp[AT_loopNum], Ki[AT_loopNum], 0.0);
             tune[AT_loopNum] = false;
-            loopStatus[AT_loopNum] = 1;
+            stable[AT_loopNum] = false;
+            loopStatus[AT_loopNum] = 0;
             autotuneDisplay = false;
             keypadDisplay = false;
             overviewDisplay = true;
             pidLoop[AT_loopNum].SetMode(AUTOMATIC);
+            for (int i=0; i<5; i++){
+              outputEnable[i] = false;
+              autoturnedonflag[i] = false;
+              slope[i] = 0.0;
+           }
+           Kp[AT_loopNum] = Kp_old[AT_loopNum];
+           Ki[AT_loopNum] = Ki_old[AT_loopNum];
+           pidLoop[AT_loopNum].SetTunings(Kp[AT_loopNum], Ki[AT_loopNum], 0.0);
         }
         // Save Autotune Parameters
         if (tag == 52) {
             tune[AT_loopNum] = false;
             Kp[AT_loopNum] = AT_Kp;
             Ki[AT_loopNum] = AT_Ki;
+            Kp_old[AT_loopNum] = AT_Kp;
+            Ki_old[AT_loopNum] = AT_Ki;
             pidLoop[AT_loopNum].SetTunings(AT_Kp, AT_Ki, 0.0);
-            String SDpath = "AshbyCross/kp" + String(AT_loopNum) + ".txt";  // Save Kp, Ki to sd card
+            String SDpath = "AshbyCross/kp" + String(AT_loopNum) + ".txt";         // Save Kp, Ki to sd card
             save_str_to_SD(SDpath, String(AT_Kp));
             SDpath = "AshbyCross/ki" + String(AT_loopNum) + ".txt";
             save_str_to_SD(SDpath, String(AT_Ki));
-            loopStatus[AT_loopNum] = 1;
+            loopStatus[AT_loopNum] = 0;
             sendDataToBrowser(AT_loopNum);
             autotuneDisplay = false;
             keypadDisplay = false;
             overviewDisplay = true;
             pidLoop[AT_loopNum].SetMode(AUTOMATIC);
+            outputEnable[AT_loopNum] = false;
         }
     }
     if (isKeypadDisplay) {
@@ -997,7 +1012,6 @@ void control()
             overviewDisplay = true;
             autotuneDisplay = false;
             keypadDisplay = false;
-            
         }
         // "Next" Button pressed in keypad display
         else if (tag == 14) {
@@ -1011,16 +1025,16 @@ void control()
         // Output Button pressed in keypad display
         else if (tag == 15) {
             outputEnable[loopNum] = !outputEnable[loopNum];
-            if (outputEnable[loopNum]){
-                oldTime[loopNum] = millis();
-                oldTemp[loopNum] = temp[loopNum];
-                Temperature_diff[loopNum] = Setpoint[loopNum]-oldTemp[loopNum];
-                Heater_plugged[loopNum] = false;      
-                target_reached[loopNum] = false;
-                if(temp[loopNum] > Setpoint[loopNum]){
-                  target_reached[loopNum] = true;
-                }
-            }      
+            if (outputEnable[loopNum] == false) {
+                LoopError[loopNum] = 0;
+                AlarmStatus[loopNum] = 0;
+                AlarmText = "";
+                LoopAlarmText = "";
+				        time_equal[loopNum] = time_unequal[loopNum];
+                loopStatus[loopNum] = 1;
+            }else{
+              loopStatus[loopNum] = 0;
+            }
         }
     }
  }
@@ -1038,7 +1052,213 @@ void control()
   Wire.write((dac_i % 16) << 4);     // Lower data bits (D3.D2.D1.D0.x.x.x.x)
   Wire.endTransmission();
  }
- 
+
+void check_stability(int loopIdx){
+  //algrim 1 check each 2 of 4 slope of based on (max-min)/time are within 2.5% of diff of each other
+  //algrim 2 check if stays in 2% of target range within 4 zero-crossing point
+  //algrim 3 check if stays in 2% of target range within 10 mins
+  //algrim 4 if temp reach 95% of setpoint temp but can't reach target within 15 min, make is stable
+  static bool startlookingformax = false;
+  static bool startlookingformin = false;
+  static double tempMin_old = 0.0;
+  static double tempMax_old = 0.0;
+  static double tempMin = 0.0;
+  static double tempMax = 0.0;
+  static byte slope_index = 0;
+  static unsigned long time_atMax = 0;
+  static unsigned long time_atMin = 0;
+  static byte within2_index = 0;
+  static bool check_within2_percent[] = {false,false,false,false,false};
+  static unsigned long cannot_reach_target_timer = millis();
+  static float temp_default_ki = Default_ki;
+  
+  if(atInit_2[loopIdx]) {
+    atInit_2[loopIdx] = false;
+    startlookingformax = false;
+    startlookingformin = true;
+    tempMin_old = 0.0;
+    tempMax_old = 0.0;
+    tempMin = temp[loopIdx];
+    tempMax = Setpoint[loopIdx];
+    //Output_Max = 0.0;
+    //outputDown = WindowSize;
+    time_atMax = millis();
+    time_atMin = millis();
+    slope_index = 0;
+    within2_index = 0;
+    check_within2_percent[0] = false;
+    check_within2_percent[1] = false;
+    check_within2_percent[2] = false;
+    check_within2_percent[3] = false;
+    check_within2_percent[4] = false;
+    check_stability_time(true);
+    cannot_reach_target_timer = millis();
+    isthealgriml = 0;
+    temp_default_ki = Default_ki;
+  }
+  
+  if(temp[loopIdx] < Setpoint[loopIdx]){
+    if(startlookingformax){ //0 crossing point, get max, slope is postive
+      if(tempMax > Setpoint[loopIdx] * 1.02 && slope_index > 0){
+        temp_default_ki = temp_default_ki / 2;
+        pidLoop[loopNumber].SetTunings(Default_kp, temp_default_ki , 0.0);
+        pidLoop[AT_loopNum].SetMode(AUTOMATIC);
+      }
+      slope[slope_index] = 1000 * (tempMax - tempMin) / (time_atMax - time_atMin);  
+      if(slope_index > 3){
+        slope[0] = slope[1];
+        slope[1] = slope[2];
+        slope[2] = slope[3];
+        slope[3] = slope[4];
+        slope_index = 3;
+        //if((abs(slope[1]) - abs(slope[0]))/abs(slope[0]) < 0.2 && (abs(slope[2]) - abs(slope[1]))/abs(slope[1]) < 0.2 && (abs(slope[3]) - abs(slope[2]))/abs(slope[2]) < 0.2){
+        if(abs(slope[2] - slope[0])/max(abs(slope[0]),abs(slope[2])) < 0.25 && abs(slope[3] - slope[1])/ max(abs(slope[1]),abs(slope[3])) < 0.25){
+          stable[AT_loopNum] = true;
+          pidLoop[AT_loopNum].SetMode(MANUAL);
+          isthealgriml =1;
+        }
+      }
+      
+      if(tempMax < Setpoint[AT_loopNum] * 1.02) check_within2_percent[within2_index] = true;
+      else check_within2_percent[within2_index] = false;
+
+      if(within2_index > 3){
+        check_within2_percent[0] = check_within2_percent[1];
+        check_within2_percent[1] = check_within2_percent[2];
+        check_within2_percent[2] = check_within2_percent[3];
+        check_within2_percent[3] = check_within2_percent[4];
+        within2_index = 3;
+        if(check_within2_percent[0] && check_within2_percent[1] && check_within2_percent[2] && check_within2_percent[3]){
+          stable[AT_loopNum] = true;
+          pidLoop[AT_loopNum].SetMode(MANUAL);
+          isthealgriml =2;
+        }
+      }
+      slope_index +=1;
+      within2_index += 1;
+      tempMin = 500;//reset min temp for next period
+    }
+    startlookingformax = false;
+    startlookingformin = true;
+  }else{
+    if(startlookingformin){ // 0 crossing point, get min, slope is negetive
+      if(tempMin < Setpoint[loopIdx] * 0.98 && slope_index > 0){
+        temp_default_ki = temp_default_ki / 2;
+        pidLoop[loopNumber].SetTunings(Default_kp, temp_default_ki , 0.0);
+        pidLoop[AT_loopNum].SetMode(AUTOMATIC);
+      }
+      if(slope_index == 0) time_atMax = millis(); // in case in first circle, the min not change and result is inf
+      slope[slope_index] = 1000 * (tempMin - tempMax) / (time_atMin - time_atMax);
+      if(slope_index > 3){
+        slope[0] = slope[1];
+        slope[1] = slope[2];
+        slope[2] = slope[3];
+        slope[3] = slope[4];
+        slope_index = 3;
+        //if((abs(slope[1]) - abs(slope[0]))/abs(slope[0]) < 0.2 && (abs(slope[2]) - abs(slope[1]))/abs(slope[1]) < 0.2 && (abs(slope[3]) - abs(slope[2]))/abs(slope[2]) < 0.2){
+        if(abs(slope[2] - slope[0])/max(abs(slope[0]),abs(slope[2])) < 0.25 && abs(slope[3] - slope[1])/ max(abs(slope[1]),abs(slope[3])) < 0.25 ){
+          stable[AT_loopNum] = true;
+          pidLoop[AT_loopNum].SetMode(MANUAL);
+          isthealgriml =1;
+        }
+      }
+      
+      if(tempMin > Setpoint[AT_loopNum] * 0.98) check_within2_percent[within2_index] = true;
+      else check_within2_percent[within2_index] = false;
+      
+      if(within2_index > 3){
+        check_within2_percent[0] = check_within2_percent[1];
+        check_within2_percent[1] = check_within2_percent[2];
+        check_within2_percent[2] = check_within2_percent[3];
+        check_within2_percent[3] = check_within2_percent[4];
+        within2_index = 3;
+        if(check_within2_percent[0] && check_within2_percent[1] && check_within2_percent[2] && check_within2_percent[3]){
+          stable[AT_loopNum] = true;
+          pidLoop[AT_loopNum].SetMode(MANUAL);
+          isthealgriml =2;
+        }
+      }
+      slope_index += 1;
+      within2_index += 1;
+      tempMax = 0;//reset max temp for next period
+    }
+    startlookingformax = true;
+    startlookingformin = false;
+  }
+  
+  if(startlookingformax){
+    if (temp[loopIdx] > tempMax_old) {
+        tempMax = temp[loopIdx];
+        time_atMax = millis();
+    }
+    tempMax_old = tempMax;
+  }else if(startlookingformin){
+    if (temp[loopIdx] < tempMin_old) {
+        tempMin = temp[loopIdx];
+        time_atMin = millis();
+    }
+    tempMin_old = tempMin;
+  }
+  
+//  if(within2_index > 1){//record the maximum output for autotuing which is the maximum output after one period of the cycle
+//    if(Output[loopIdx] > Output_Max){
+//      Output_Max = Output[loopIdx];
+//    }
+//  }
+//  if(within2_index > 0){
+//     if(Output[loopIdx] < outputDown){
+//      outputDown = Output[loopIdx];
+//    }
+//  }
+
+  if(temp[loopIdx] > Setpoint[AT_loopNum] * 0.98 && temp[loopIdx] < Setpoint[AT_loopNum] * 1.02){//3
+    if(check_stability_time(false)){
+      stable[AT_loopNum] = true;
+      pidLoop[AT_loopNum].SetMode(MANUAL);
+      isthealgriml =3;
+    }
+  }else{
+      check_stability_time(true);
+  }
+
+  if(temp[loopIdx] < Setpoint[AT_loopNum] && temp[loopIdx] > Setpoint[AT_loopNum] * 0.95){//4
+    if(millis()-cannot_reach_target_timer > 15*60*1000){
+      stable[AT_loopNum] = true;
+      pidLoop[AT_loopNum].SetMode(MANUAL);
+      //Output_Max = WindowSize;
+      //outputDown = 0;
+      isthealgriml =4;
+    }
+  }else{
+    cannot_reach_target_timer = millis();
+  }
+  
+
+//  temp1 = tempMax;
+//  temp2 = tempMin;
+//  temp3 = time_atMax;
+//  temp4 = time_atMin;
+//  temp5 = Output_Max;
+//  temp6 = check_within2_percent[0];
+//  temp7 = check_within2_percent[1];
+//  temp8 = check_within2_percent[2];
+//  temp9 = check_within2_percent[3];
+
+}
+
+bool check_stability_time(bool reset_flag){
+  static unsigned long oldtime = millis();
+  if(reset_flag){
+    oldtime = millis();
+    return false;
+  }
+  if(millis() - oldtime > 600000){//change to 10 min
+    return true;
+  }
+  return false;
+}
+
+
 /*
 Function Performs PI Loop Autotune
 */
@@ -1069,21 +1289,28 @@ void autotune(int loopIdx) {
       baseOutput = Output[loopIdx];
       Output_old = Output[loopIdx];
 
-      outUp = baseOutput + (baseOutput * deltaOut);
+      //outUp = max(Output_Max,WindowSize * 0.2);
+      //outDn = min(baseOutput - (baseOutput * deltaOut),outputDown);
       outDn = baseOutput - (baseOutput * deltaOut);
+      outUp = baseOutput + (baseOutput * deltaOut);
+      
+      
+      if(outUp < WindowSize * 0.2) {
+        outUp = WindowSize * 0.2;
+        //outDn = 0.0;
+      }           
+      
       if (outUp > WindowSize) {
-          outUp = WindowSize;
-		      outDn = 0.0;
+        outUp = WindowSize;
+	      //outDn = 0.0;
 	    }
-
-      //triggerTemp = temp[loopIdx] + 1.0;
-      //march 20 2023
+      outDn = 0.0;
       triggerTemp = Setpoint[loopIdx] + 1.0;
       atInit[loopIdx] = false;
       cycle = 0;
   }
   if (temp[loopIdx] < triggerTemp) {
-      Output[loopIdx] = outUp;
+      Output[loopIdx] = outUp; 
   }
   if (temp[loopIdx] > triggerTemp) {
       Output[loopIdx] = outDn;
@@ -1101,7 +1328,7 @@ void autotune(int loopIdx) {
 
   if (Output[loopIdx] != Output_old) {
       // Output High -> LOW
-      if (Output[loopIdx] < (baseOutput - (baseOutput * 0.1))) {
+      if (Output[loopIdx] == outDn) {
           cycle = cycle + 1;
           if (cycle == 3) {
             time1 = millis();
@@ -1110,14 +1337,15 @@ void autotune(int loopIdx) {
             time2 = millis();
           }
       }
-	  // Output LOW -> HIGH
-      if (Output[loopIdx] > (baseOutput + (baseOutput * 0.1))) {
-          //time2 = millis();
-          //Serial.print("T2: "); Serial.println(time2);
-      }
+//      Output LOW -> HIGH
+//      if (Output[loopIdx] > (baseOutput + (baseOutput * 0.1))) {
+//          //time2 = millis();
+//          //Serial.print("T2: "); Serial.println(time2);
+//      }
   }
+  
   Output_old = Output[loopIdx];
-
+  
   if (cycle == 4) {
     long dT = time1 - time2;
     long deltaT = abs(dT);
@@ -1126,7 +1354,6 @@ void autotune(int loopIdx) {
     AT_Kp = 0.4 * Ku;
     AT_Ki = 0.48 * Ku / Pu;
     tune[loopIdx] = false;
-    outputEnable[AT_loopNum] = false;
     Title2 = "Tuning -- Finished";
   }
 }
@@ -1161,10 +1388,10 @@ Function sets Thermocouple filter
  void setFilter() {
    StatusStr1 = "Filter (" + String(coefficient) + "): ";
    for (int i = 0; i < numLoops; i++) {
-     if (tempSensor[i].isConnected()) {
+     if (tempSensor[i].isConnected()){
        delay(10);
        tempSensor[i].setFilterCoefficient(coefficient);
-	   delay(10);
+	    delay(10);
        if(tempSensor[i].getFilterCoefficient() == coefficient){
          StatusStr1 += String(i) + "/";
        }
@@ -1175,10 +1402,10 @@ Function sets Thermocouple filter
 /*
 Function sets Thermocouple type
 */
- void setType() {
+void setType() {
    StatusStr2 += "Type (" + tcChar[type] + "): ";
    for (int i = 0; i < numLoops; i++) {
-     if (tempSensor[i].isConnected()) {
+     if (tempSensor[i].isConnected()){
        tempSensor[i].setThermocoupleType(type);
        if(tempSensor[i].getThermocoupleType() == type){
          StatusStr2 += String(i) + "/";
@@ -1186,7 +1413,7 @@ Function sets Thermocouple type
        delay(20);
      }
    }
-}
+ }
 
 /*
 Function reads Startup Data from SD Card and initializes Modbus RTU
@@ -1206,12 +1433,14 @@ void readStartupData() {
       CleO.FGetS(file, (uint8_t *)buf, 10);
       CleO.FClose(file);
       Kp[i] = atof(buf);
+      Kp_old[i] = Kp[i];
       // Read PID Ki from sd card
       SDpath = "AshbyCross/ki" + String(i) + ".txt";
       file = CleO.FOpen(SDpath.c_str(), FILE_READ);
       CleO.FGetS(file, (uint8_t *)buf, 10);
       CleO.FClose(file);
       Ki[i] = atof(buf);
+      Ki_old[i] = Ki[i];
       // Read PID Labels from sd card
       SDpath = "AshbyCross/label" + String(i) + ".txt";
       file = CleO.FOpen(SDpath.c_str(), FILE_READ);
@@ -1261,49 +1490,42 @@ void readStartupData() {
   CleO.FGetS(file, (uint8_t *)buf, 10);
   CleO.FClose(file);
   coefficient = atoi(buf);
-  
   // Read Kp Tuning from sd card
   SDpath = "AshbyCross/kpt.txt";
   file = CleO.FOpen(SDpath.c_str(), FILE_READ);
   CleO.FGetS(file, (uint8_t *)buf, 10);
   CleO.FClose(file);
   KpTuning = atof(buf);
-  
   // Read Delta Output from sd card
   SDpath = "AshbyCross/deltaout.txt";
   file = CleO.FOpen(SDpath.c_str(), FILE_READ);
   CleO.FGetS(file, (uint8_t *)buf, 10);
   CleO.FClose(file);
   deltaOut = atof(buf);
-  
   // Read number of loops from sd card
   SDpath = "AshbyCross/numloops.txt";
   file = CleO.FOpen(SDpath.c_str(), FILE_READ);
   CleO.FGetS(file, (uint8_t *)buf, 10);
   CleO.FClose(file);
   numLoops = atoi(buf);
-  
   // Read min SP from sd card
   SDpath = "AshbyCross/spmin.txt";
   file = CleO.FOpen(SDpath.c_str(), FILE_READ);
   CleO.FGetS(file, (uint8_t *)buf, 10);
   CleO.FClose(file);
   SpMin = atof(buf);
-  
   // Read max SP from sd card
   SDpath = "AshbyCross/spmax.txt";
   file = CleO.FOpen(SDpath.c_str(), FILE_READ);
   CleO.FGetS(file, (uint8_t *)buf, 10);
   CleO.FClose(file);
   SpMax = atof(buf);
-  
   // Read timeout in seconds from sd card
   SDpath = "AshbyCross/tmoutsec.txt";
   file = CleO.FOpen(SDpath.c_str(), FILE_READ);
   CleO.FGetS(file, (uint8_t *)buf, 10);
   CleO.FClose(file);
   tmoutsec = atoi(buf);
-  
   // Read SP Enable string from sd card
   SDpath = "AshbyCross/spenable.txt";
   file = CleO.FOpen(SDpath.c_str(), FILE_READ);
@@ -1311,7 +1533,6 @@ void readStartupData() {
   CleO.FClose(file);
   spEnableStr = String(buf);
   spEnableStr.trim();
-  
   // Read AutoTune Enable string from sd card
   SDpath = "AshbyCross/atenable.txt";
   file = CleO.FOpen(SDpath.c_str(), FILE_READ);
@@ -1319,7 +1540,6 @@ void readStartupData() {
   CleO.FClose(file);
   atEnableStr = String(buf);
   atEnableStr.trim();
-  
   // Read concecutve Loop Errors from SD card
   SDpath = "AshbyCross/sumerr.txt";
   file = CleO.FOpen(SDpath.c_str(), FILE_READ);
@@ -1332,32 +1552,32 @@ void readStartupData() {
 Function saves Loop Data (from browser) to sd card
 */
 void saveLoopDataToSD(int ln) {
-  String SDpath = "AshbyCross/label" + String(ln) + ".txt";
-  save_str_to_SD(SDpath, String(loopLabel[ln]));
-  SDpath = "AshbyCross/kp" + String(ln) + ".txt";         // Save Kp, Ki to sd card
-  save_str_to_SD(SDpath, String(Kp[ln]));
-  SDpath = "AshbyCross/ki" + String(ln) + ".txt";
-  save_str_to_SD(SDpath, String(Ki[ln]));
-  SDpath = "AshbyCross/al" + String(ln) + ".txt";
-  save_str_to_SD(SDpath, String(lowAlarm[ln]));
-  SDpath = "AshbyCross/ah" + String(ln) + ".txt";
-  save_str_to_SD(SDpath, String(highAlarm[ln]));
+      String SDpath = "AshbyCross/label" + String(ln) + ".txt";
+      save_str_to_SD(SDpath, String(loopLabel[ln]));
+      SDpath = "AshbyCross/kp" + String(ln) + ".txt";         // Save Kp, Ki to sd card
+      save_str_to_SD(SDpath, String(Kp[ln]));
+      SDpath = "AshbyCross/ki" + String(ln) + ".txt";
+      save_str_to_SD(SDpath, String(Ki[ln]));
+      SDpath = "AshbyCross/al" + String(ln) + ".txt";
+      save_str_to_SD(SDpath, String(lowAlarm[ln]));
+      SDpath = "AshbyCross/ah" + String(ln) + ".txt";
+      save_str_to_SD(SDpath, String(highAlarm[ln]));
 }
 
 /*
 Function saves Tuning Data (from browser) to sd card
 */
 void saveTuningDataToSD() {
-  String SDpath = "AshbyCross/filter.txt";
-  save_str_to_SD(SDpath, String(coefficient));
-  SDpath = "AshbyCross/kpt.txt";
-  save_str_to_SD(SDpath, String(KpTuning));
-  SDpath = "AshbyCross/deltaout.txt";
-  save_str_to_SD(SDpath, String(deltaOut));
-  SDpath = "AshbyCross/spenable.txt";
-  save_str_to_SD(SDpath, spEnableStr);
-  SDpath = "AshbyCross/atenable.txt";
-  save_str_to_SD(SDpath, atEnableStr);
+      String SDpath = "AshbyCross/filter.txt";
+      save_str_to_SD(SDpath, String(coefficient));
+      SDpath = "AshbyCross/kpt.txt";
+      save_str_to_SD(SDpath, String(KpTuning));
+      SDpath = "AshbyCross/deltaout.txt";
+      save_str_to_SD(SDpath, String(deltaOut));
+      SDpath = "AshbyCross/spenable.txt";
+      save_str_to_SD(SDpath, spEnableStr);
+      SDpath = "AshbyCross/atenable.txt";
+      save_str_to_SD(SDpath, atEnableStr);
 }
 
 /*
@@ -1370,7 +1590,7 @@ void initWiFiAP() {
   APname.toCharArray(AP_char_array, AP_str_len);
   WiFi.mode(WIFI_AP);
   WiFi.softAP(AP_char_array,password,3); // 192.168.4.1
-  if (DEBUG == 1) Serial.println("Access Point configured!");
+  if (DEBUG == 1) Serial.println("Access Point configured !");
 }
 
 
@@ -1440,7 +1660,7 @@ void sendLabelsToBrowser() {
     wsTxt += String(loopLabel[2]) + ",";
     wsTxt += String(loopLabel[3]) + ",";
     wsTxt += String(loopLabel[4]) + ",";
-	  wsTxt += String(numLoops) + ",";
+	wsTxt += String(numLoops) + ",";
     // Send it
     wsTxt.toCharArray(buf, 60);
     ws.textAll(buf);
@@ -1469,8 +1689,8 @@ void onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventT
     loopNumber = 0;
     AT_loopNum = 0;
     sendDataToBrowser(loopNumber);
-	  sendLabelsToBrowser();
-	  sendAlarmsToBrowser(loopNumber);
+	sendLabelsToBrowser();
+	sendAlarmsToBrowser(loopNumber);
   } else if(type == WS_EVT_DISCONNECT) {
     if (DEBUG == 1) Serial.println("Client disconnected");
     ws_connected = false;
