@@ -912,7 +912,7 @@ void control()
                 AlarmStatus[loopNum] = 0;
                 AlarmText = "";
                 LoopAlarmText = "";
-				time_equal[loopNum] = time_unequal[loopNum];
+				        time_equal[loopNum] = time_unequal[loopNum];
             }
         }
     }
@@ -1246,7 +1246,7 @@ void saveTuningDataToSD() {
  Function Configures Access Point Mode
  */
 void initWiFiAP() {
-  APname = "AshbyCross_HC_" + WiFi.macAddress();
+  APname = "abcdefg" + WiFi.macAddress();
   int AP_str_len = APname.length() + 1;
   char AP_char_array[AP_str_len];
   APname.toCharArray(AP_char_array, AP_str_len);
